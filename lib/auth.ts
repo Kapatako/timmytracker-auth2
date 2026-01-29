@@ -1,55 +1,79 @@
-"use client";
+import type { NextAuthOptions } from "next-auth";
+import GoogleProvider from "next-auth/providers/google";
 
-import { signIn } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
+const isProd = process.env.NODE_ENV === "production";
 
-export default function SignInPage() {
-  const sp = useSearchParams();
+// Prod'da cookie'leri tüm subdomainlerde paylaşmak için şart
+const COOKIE_DOMAIN = isProd ? ".timmytracker.com" : undefined;
 
-  // ✅ URL’den callbackUrl çek (TopNav bunu gönderiyor)
-  const callbackUrl =
-    sp.get("callbackUrl") ||
-    "https://www.timmytracker.com/me";
+export const authOptions: NextAuthOptions = {
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+    }),
+  ],
 
-  return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
-        background: "#070A12",
-        color: "white",
-        fontFamily: "system-ui",
-      }}
-    >
-      <div style={{ width: 420 }}>
-        <h1 style={{ fontSize: 34, fontWeight: 900 }}>TimmyTracker Login</h1>
+  secret: process.env.NEXTAUTH_SECRET,
+  session: { strategy: "jwt" },
 
-        <p style={{ opacity: 0.7, marginTop: 8 }}>
-          Continue with Google to save your builds.
-        </p>
+  // ✅ Kritik: subdomain paylaşımı için cookie domain
+  cookies: {
+    // Session token cookie: www + auth + diğer subdomainler görebilsin
+    sessionToken: {
+      name: "__Secure-next-auth.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: isProd, // prod'da true, localde false
+        ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
+      },
+    },
 
-        <button
-          onClick={() =>
-            signIn("google", {
-              callbackUrl, // ✅ burası kritik
-            })
-          }
-          style={{
-            marginTop: 18,
-            width: "100%",
-            padding: "14px",
-            borderRadius: 14,
-            border: "1px solid rgba(255,255,255,0.15)",
-            background: "rgba(255,255,255,0.06)",
-            color: "white",
-            fontWeight: 800,
-            cursor: "pointer",
-          }}
-        >
-          Continue with Google
-        </button>
-      </div>
-    </main>
-  );
-}
+    // NextAuth callback cookie
+    callbackUrl: {
+      name: "__Secure-next-auth.callback-url",
+      options: {
+        sameSite: "lax",
+        path: "/",
+        secure: isProd,
+        ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
+      },
+    },
+
+    // CSRF cookie: __Host- olunca DOMAIN veremezsin (doğru olan bu)
+    csrfToken: {
+      name: "__Host-next-auth.csrf-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: isProd,
+      },
+    },
+  },
+
+  callbacks: {
+    async jwt({ token, account, profile }) {
+      // email garanti olsun
+      if (profile && "email" in profile) token.email = (profile as any).email;
+
+      // provider bilgisi (opsiyonel)
+      if (account?.provider) (token as any).provider = account.provider;
+
+      return token;
+    },
+
+    async session({ session, token }) {
+      if (session.user) {
+        if (token?.email) session.user.email = token.email as string;
+        (session.user as any).provider = (token as any).provider ?? "google";
+      }
+      return session;
+    },
+  },
+
+  // İstersen debug:
+  // debug: !isProd,
+};
