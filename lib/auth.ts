@@ -42,7 +42,7 @@ callbacks: {
   },
 
   // senin signIn/jwt/session callbacklerin devam...
-}
+},
   callbacks: {
     async signIn({ user }: { user: User }) {
       if (!user?.email) return false;
