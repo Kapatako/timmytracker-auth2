@@ -1,5 +1,9 @@
+// lib/auth.ts  (AUTH projesi)
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
+
+const WWW = "https://www.timmytracker.com";
+const AUTH = "https://auth.timmytracker.com";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -12,12 +16,21 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
 
-  // ✅ TEK SCOPE: .timmytracker.com (main de görsün)
+  // IMPORTANT: cross-subdomain cookie
   cookies: {
     sessionToken: {
       name: "__Secure-next-auth.session-token",
       options: {
         httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: true,
+        domain: ".timmytracker.com",
+      },
+    },
+    callbackUrl: {
+      name: "__Secure-next-auth.callback-url",
+      options: {
         sameSite: "lax",
         path: "/",
         secure: true,
@@ -33,25 +46,32 @@ export const authOptions: NextAuthOptions = {
         secure: true,
       },
     },
-    callbackUrl: {
-      name: "__Secure-next-auth.callback-url",
-      options: {
-        sameSite: "lax",
-        path: "/",
-        secure: true,
-        domain: ".timmytracker.com",
-      },
-    },
   },
 
   callbacks: {
     async jwt({ token, profile }) {
-      if (profile && "email" in profile) token.email = String(profile.email || "").toLowerCase();
+      if (profile && (profile as any).email) token.email = (profile as any).email;
       return token;
     },
+
     async session({ session, token }) {
-      if (session.user && token?.email) session.user.email = token.email as string;
+      if (session.user && token?.email) (session.user as any).email = token.email;
       return session;
+    },
+
+    // 🔥 BU OLMAZSA HEP AUTH'A DÖNER
+    async redirect({ url }) {
+      // 1) relative URL gelirse www’ye çevir
+      if (url.startsWith("/")) return `${WWW}${url}`;
+
+      // 2) sadece www origin’ine izin ver
+      try {
+        const u = new URL(url);
+        if (u.origin === WWW) return u.toString();
+      } catch {}
+
+      // 3) diğer her şeyi güvenli default’a at
+      return `${WWW}/me`;
     },
   },
 };
