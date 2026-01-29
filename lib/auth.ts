@@ -9,7 +9,6 @@ const DEFAULT_AFTER_LOGIN = "https://www.timmytracker.com/me";
 
 export const authOptions: NextAuthOptions = {
   // Vercel/Reverse proxy arkasında stabil olsun
-  trustHost: true,
 
   providers: [
     GoogleProvider({
