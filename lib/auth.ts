@@ -1,60 +1,105 @@
 import type { NextAuthOptions } from "next-auth";
-import Google from "next-auth/providers/google";
-import type { User } from "next-auth";
+import GoogleProvider from "next-auth/providers/google";
 
+/**
+ * ✅ Production check
+ * Localde cookie domain sorun çıkarmasın diye sadece prod’da açıyoruz
+ */
+const isProd = process.env.NODE_ENV === "production";
 
-const WORKER_BASE =
-  process.env.WORKER_BASE_URL || "https://api.timmytracker.com";
-
-
+/**
+ * ✅ NextAuth config
+ * Auth sitesi: auth.timmytracker.com
+ * Ana site:   www.timmytracker.com
+ *
+ * Cookie domain sayesinde login session iki subdomain arasında paylaşılır
+ */
 export const authOptions: NextAuthOptions = {
   providers: [
-    Google({
+    GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
   ],
 
-  session: { strategy: "jwt" },
+  /**
+   * ✅ Important
+   */
+  secret: process.env.NEXTAUTH_SECRET,
 
+  /**
+   * ✅ Session strategy
+   * JWT en temiz yöntem
+   */
+  session: {
+    strategy: "jwt",
+  },
+
+  /**
+   * ✅ Cookie paylaşımı (EN ÖNEMLİ FIX)
+   * auth.timmytracker.com login yapınca
+   * www.timmytracker.com da aynı session’ı görür
+   */
   cookies: {
     sessionToken: {
-      name: "__Secure-next-auth.session-token",
+      name: isProd
+        ? "__Secure-next-auth.session-token"
+        : "next-auth.session-token",
+
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: true,
-        domain: ".timmytracker.com",
+
+        /**
+         * ✅ HTTPS zorunlu
+         */
+        secure: isProd,
+
+        /**
+         * ✅ subdomain sharing FIX
+         * auth + www aynı login session kullanır
+         */
+        domain: isProd ? ".timmytracker.com" : undefined,
       },
     },
   },
+
+  /**
+   * ✅ Callbacks
+   * Kullanıcı bilgilerini JWT içine yaz
+   */
   callbacks: {
-    async signIn({ user }: { user: User }) {
-      if (!user?.email) return false;
-
-      await fetch(`${WORKER_BASE}/api/tarkov/profile/upsert`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: user.email.toLowerCase(),
-          email: user.email.toLowerCase(),
-          name: user.name ?? null,
-          image: (user as any).image ?? null,
-        }),
-      });
-
-      return true;
-    },
-
     async jwt({ token, user }) {
-      if (user?.email) token.email = user.email;
+      if (user) {
+        token.email = user.email;
+        token.name = user.name;
+        token.picture = user.image;
+      }
       return token;
     },
 
     async session({ session, token }) {
-      if (session.user) session.user.email = token.email as string;
+      if (session.user) {
+        session.user.email = token.email as string;
+        session.user.name = token.name as string;
+        session.user.image = token.picture as string;
+      }
       return session;
     },
   },
+
+  /**
+   * ✅ Pages override
+   * Auth projesinin kendi login ekranı
+   */
+  pages: {
+    signIn: "/sign-in",
+  },
+
+  /**
+   * ✅ Debug mode
+   * İlk testte aç, sonra kapat
+   */
+  debug: true,
 };
