@@ -1,32 +1,55 @@
-import { NextResponse } from "next/server";
+"use client";
 
-const AUTH_BASE = process.env.AUTH_BASE_URL || "https://auth.timmytracker.com";
-const WORKER_BASE = process.env.WORKER_BASE_URL || "https://www.timmytracker.com";
+import { signIn } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 
-export async function GET(req: Request) {
-  // 1) browser cookie'lerini al
-  const cookie = req.headers.get("cookie") || "";
+export default function SignInPage() {
+  const sp = useSearchParams();
 
-  // 2) session'ı SADECE auth subdomain'inden oku
-  const sRes = await fetch(`${AUTH_BASE}/api/auth/session`, {
-    headers: { cookie },
-    cache: "no-store",
-  });
+  // ✅ URL’den callbackUrl çek (TopNav bunu gönderiyor)
+  const callbackUrl =
+    sp.get("callbackUrl") ||
+    "https://www.timmytracker.com/me";
 
-  const session = await sRes.json().catch(() => null);
-  const email = session?.user?.email?.toLowerCase();
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        background: "#070A12",
+        color: "white",
+        fontFamily: "system-ui",
+      }}
+    >
+      <div style={{ width: 420 }}>
+        <h1 style={{ fontSize: 34, fontWeight: 900 }}>TimmyTracker Login</h1>
 
-  if (!email) {
-    return NextResponse.json({ ok: false, error: "not signed in" }, { status: 401 });
-  }
+        <p style={{ opacity: 0.7, marginTop: 8 }}>
+          Continue with Google to save your builds.
+        </p>
 
-  // 3) worker’dan DB user çek
-  const r = await fetch(`${WORKER_BASE}/api/profile/me?email=${encodeURIComponent(email)}`, {
-    cache: "no-store",
-  });
-
-  const j = await r.json().catch(() => null);
-  if (!j?.ok) return NextResponse.json({ ok: false, error: j?.error || "worker error", user: null }, { status: 200 });
-
-  return NextResponse.json({ ok: true, user: j.user || null }, { status: 200 });
+        <button
+          onClick={() =>
+            signIn("google", {
+              callbackUrl, // ✅ burası kritik
+            })
+          }
+          style={{
+            marginTop: 18,
+            width: "100%",
+            padding: "14px",
+            borderRadius: 14,
+            border: "1px solid rgba(255,255,255,0.15)",
+            background: "rgba(255,255,255,0.06)",
+            color: "white",
+            fontWeight: 800,
+            cursor: "pointer",
+          }}
+        >
+          Continue with Google
+        </button>
+      </div>
+    </main>
+  );
 }
