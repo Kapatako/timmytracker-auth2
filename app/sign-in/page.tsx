@@ -2,34 +2,14 @@
 
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo } from "react";
 
-function safeCallback(raw: string | null) {
-  // default hedef
-  const fallback = "https://www.timmytracker.com/me";
-  if (!raw) return fallback;
-
-  try {
-    // URL decode + parse
-    const decoded = decodeURIComponent(raw);
-    const u = new URL(decoded);
-
-    // SADECE www.timmytracker.com’a izin ver
-    if (u.origin === "https://www.timmytracker.com") return u.toString();
-
-    return fallback;
-  } catch {
-    // "/me" gibi relative gelirse
-    if (raw.startsWith("/")) return `https://www.timmytracker.com${raw}`;
-    return fallback;
-  }
-}
-
-function SignInInner() {
+export default function SignInPage() {
   const sp = useSearchParams();
 
-  // main’den gelen callbackUrl paramı
-  const callbackUrl = useMemo(() => safeCallback(sp.get("callbackUrl")), [sp]);
+  // ✅ URL’den callbackUrl çek (TopNav bunu gönderiyor)
+  const callbackUrl =
+    sp.get("callbackUrl") ||
+    "https://www.timmytracker.com/me";
 
   return (
     <main
@@ -46,11 +26,15 @@ function SignInInner() {
         <h1 style={{ fontSize: 34, fontWeight: 900 }}>TimmyTracker Login</h1>
 
         <p style={{ opacity: 0.7, marginTop: 8 }}>
-          Continue with Google to sign in.
+          Continue with Google to save your builds.
         </p>
 
         <button
-          onClick={() => signIn("google", { callbackUrl })}
+          onClick={() =>
+            signIn("google", {
+              callbackUrl, // ✅ burası kritik
+            })
+          }
           style={{
             marginTop: 18,
             width: "100%",
@@ -65,20 +49,7 @@ function SignInInner() {
         >
           Continue with Google
         </button>
-
-        <div style={{ marginTop: 12, fontSize: 12, opacity: 0.6 }}>
-          Redirecting to: <span style={{ opacity: 0.9 }}>{callbackUrl}</span>
-        </div>
       </div>
     </main>
-  );
-}
-
-export default function SignInPage() {
-  // useSearchParams suspense ister (Vercel build hatası yememek için)
-  return (
-    <Suspense fallback={null}>
-      <SignInInner />
-    </Suspense>
   );
 }
