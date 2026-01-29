@@ -29,20 +29,6 @@ export const authOptions: NextAuthOptions = {
       },
     },
   },
-callbacks: {
-  async redirect({ url, baseUrl }) {
-    // www’ye izin ver
-    if (url.startsWith("https://www.timmytracker.com")) return url;
-
-    // relative callback gelirse www’ye çevir
-    if (url.startsWith("/")) return `https://www.timmytracker.com${url}`;
-
-    // default: www home
-    return "https://www.timmytracker.com/";
-  },
-
-  // senin signIn/jwt/session callbacklerin devam...
-},
   callbacks: {
     async signIn({ user }: { user: User }) {
       if (!user?.email) return false;
