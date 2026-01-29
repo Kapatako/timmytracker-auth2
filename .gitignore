@@ -1,0 +1,18 @@
+# deps
+node_modules/
+
+# next build
+.next/
+out/
+
+# vercel
+.vercel/
+
+# env
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+node_modules
