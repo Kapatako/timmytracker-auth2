@@ -1,115 +1,97 @@
-// auth.ts
-import NextAuth, { type NextAuthOptions } from "next-auth";
-import Google from "next-auth/providers/google";
-// Discord kullanıyorsan aç:
-// import Discord from "next-auth/providers/discord";
+// lib/auth.ts
+import type { NextAuthOptions } from "next-auth";
+import GoogleProvider from "next-auth/providers/google";
 
-/**
- * IMPORTANT:
- * - auth.timmytracker.com üzerinde login oluyorsun
- * - www.timmytracker.com da session görebilsin diye cookie domain'i .timmytracker.com olmalı
- */
-const COOKIE_DOMAIN = ".timmytracker.com";
-const IS_PROD = process.env.NODE_ENV === "production";
+const WORKER_BASE = process.env.WORKER_BASE_URL || "https://www.timmytracker.com";
 
 export const authOptions: NextAuthOptions = {
-  // ✅ şart: auth ile www aynı NEXTAUTH_SECRET kullanmalı
-  secret: process.env.NEXTAUTH_SECRET,
-
   providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
     }),
-
-    // Discord kullanıyorsan:
-    // Discord({
-    //   clientId: process.env.DISCORD_CLIENT_ID!,
-    //   clientSecret: process.env.DISCORD_CLIENT_SECRET!,
-    // }),
   ],
 
-  session: {
-    strategy: "jwt",
-  },
+  secret: process.env.NEXTAUTH_SECRET,
+  session: { strategy: "jwt" },
 
-  /**
-   * ✅ Kritik: Cookie domain'i
-   * - session cookie'si www'de de okunabilsin
-   * - csrfToken cookie'si __Host olduğu için domain alamaz (kalsın)
-   */
+  // subdomain cookie paylaşımı
   cookies: {
     sessionToken: {
-      // prod'da __Secure- olmalı
-      name: IS_PROD
-        ? "__Secure-next-auth.session-token"
-        : "next-auth.session-token",
+      name: "__Secure-next-auth.session-token",
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: IS_PROD,
-        domain: COOKIE_DOMAIN,
+        secure: true,
+        domain: ".timmytracker.com",
       },
     },
-
     callbackUrl: {
-      name: IS_PROD
-        ? "__Secure-next-auth.callback-url"
-        : "next-auth.callback-url",
+      name: "__Secure-next-auth.callback-url",
       options: {
         sameSite: "lax",
         path: "/",
-        secure: IS_PROD,
-        domain: COOKIE_DOMAIN,
+        secure: true,
+        domain: ".timmytracker.com",
       },
     },
-
-    // __Host- cookie domain alamaz → doğru olan bu şekilde bırakmak
     csrfToken: {
-      name: IS_PROD
-        ? "__Host-next-auth.csrf-token"
-        : "next-auth.csrf-token",
+      name: "__Host-next-auth.csrf-token",
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: IS_PROD,
-        // domain YOK
+        secure: true,
       },
     },
   },
 
-  /**
-   * (Opsiyonel ama önerilir)
-   * Login sonrası default yönlendirme kontrolü.
-   */
   callbacks: {
-    async redirect({ url, baseUrl }) {
-      // sadece kendi domainlerine izin ver
-      try {
-        const u = new URL(url);
-        if (u.hostname.endsWith("timmytracker.com")) return url;
-      } catch {}
-      return baseUrl;
-    },
+    async jwt({ token, profile, user }) {
+      // token’a email / name / image bas
+      if (user?.email) token.email = user.email;
+      if (user?.name) token.name = user.name;
+      if ((user as any)?.image) token.picture = (user as any).image;
 
-    async jwt({ token, account, profile }) {
-      // ilk login anında provider bilgisi (istersen kullanırsın)
-      if (account) {
-        token.provider = account.provider;
-      }
+      if (profile && "email" in profile) token.email = (profile as any).email;
       return token;
     },
 
     async session({ session, token }) {
-      // session.user içine token bilgisi koymak istersen:
-      if (session?.user) {
-        (session.user as any).provider = (token as any).provider || null;
+      if (session.user) {
+        if (token?.email) session.user.email = token.email as string;
+        if (token?.name) session.user.name = token.name as string;
+        if ((token as any)?.picture) (session.user as any).image = (token as any).picture as string;
       }
       return session;
     },
   },
-};
 
-export const { handlers, auth, signIn, signOut } = NextAuth(authOptions);
+  // ✅ KRİTİK: Login olunca Worker’a upsert at
+  events: {
+    async signIn({ user }) {
+      try {
+        const email = (user?.email || "").toLowerCase().trim();
+        if (!email) return;
+
+        // NextAuth bazen id vermeyebilir → email’i id gibi kullan
+        const id = (user as any)?.id ? String((user as any).id) : email;
+
+        await fetch(`${WORKER_BASE}/api/profile/upsert`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id,
+            email,
+            name: user?.name || null,
+            image: (user as any)?.image || null,
+          }),
+          cache: "no-store",
+        });
+      } catch {
+        // sessiz geç (login’i bozmasın)
+      }
+    },
+  },
+};
