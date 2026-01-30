@@ -4,7 +4,6 @@ import GoogleProvider from "next-auth/providers/google";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// ❗️Export ETME — route.ts içinde sadece local kalsın
 const authOptions = {
   providers: [
     GoogleProvider({
@@ -14,37 +13,6 @@ const authOptions = {
   ],
 
   session: { strategy: "jwt" },
-
-  cookies: {
-    sessionToken: {
-      name: "__Secure-next-auth.session-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: true,
-        domain: ".timmytracker.com",
-      },
-    },
-    callbackUrl: {
-      name: "__Secure-next-auth.callback-url",
-      options: {
-        sameSite: "lax",
-        path: "/",
-        secure: true,
-        domain: ".timmytracker.com",
-      },
-    },
-    csrfToken: {
-      name: "__Host-next-auth.csrf-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: true,
-      },
-    },
-  },
 
   callbacks: {
     async redirect({ url, baseUrl }: { url: string; baseUrl: string }) {
