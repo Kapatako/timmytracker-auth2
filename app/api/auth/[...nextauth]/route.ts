@@ -1,79 +1,71 @@
-import { NextRequest, NextResponse } from "next/server";
+import NextAuth, { type NextAuthOptions } from "next-auth";
+import GoogleProvider from "next-auth/providers/google";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const AUTH_BASE = process.env.AUTH_BASE_URL || "https://auth.timmytracker.com";
-const LOOP_HEADER = "x-tt-proxy-hop";
+export const authOptions: NextAuthOptions = {
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID as string,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+    }),
+  ],
 
-async function proxy(req: NextRequest) {
-  // ✅ Loop guard: bir kez proxy'lendiyse tekrar proxy'leme
-  const hop = Number(req.headers.get(LOOP_HEADER) || "0");
-  if (hop >= 1) {
-    return NextResponse.json(
-      { ok: false, error: "Proxy loop detected", hop },
-      { status: 508 }
-    );
-  }
+  // ✅ v4'te host doğruluğu için ENV şart:
+  // NEXTAUTH_URL=https://auth.timmytracker.com
 
-  const url = new URL(req.url);
-  const target = new URL(AUTH_BASE);
-  target.pathname = url.pathname;
-  target.search = url.search;
+  session: { strategy: "jwt" },
 
-  const body =
-    req.method === "GET" || req.method === "HEAD"
-      ? undefined
-      : await req.arrayBuffer();
-
-  // ✅ Gerçek host/proto'yu al (elle www zorlamıyoruz)
-  const reqHost = req.headers.get("host") || "www.timmytracker.com";
-  const xfProto = req.headers.get("x-forwarded-proto") || "https";
-
-  const upstream = await fetch(target.toString(), {
-    method: req.method,
-    redirect: "manual",
-    cache: "no-store",
-    headers: {
-      // client headers
-      cookie: req.headers.get("cookie") || "",
-      "content-type": req.headers.get("content-type") || "",
-      accept: req.headers.get("accept") || "*/*",
-      "accept-language": req.headers.get("accept-language") || "",
-      "user-agent": req.headers.get("user-agent") || "",
-
-      // ✅ NextAuth için kritik: dış dünyadaki url bilgisi
-      "x-forwarded-host": reqHost,
-      "x-forwarded-proto": xfProto,
-
-      // ✅ origin / referer'i elle set etme; varsa geçir, yoksa boş bırak
-      origin: req.headers.get("origin") || "",
-      referer: req.headers.get("referer") || "",
-
-      // ✅ loop header ekle
-      [LOOP_HEADER]: String(hop + 1),
+  cookies: {
+    // ✅ auth + www ortak cookie görsün
+    sessionToken: {
+      name: "__Secure-next-auth.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: true,
+        domain: ".timmytracker.com",
+      },
     },
-    body,
-  });
+    callbackUrl: {
+      name: "__Secure-next-auth.callback-url",
+      options: {
+        sameSite: "lax",
+        path: "/",
+        secure: true,
+        domain: ".timmytracker.com",
+      },
+    },
+    csrfToken: {
+      name: "__Host-next-auth.csrf-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: true,
+      },
+    },
+  },
 
-  const resBody = await upstream.arrayBuffer();
-  const res = new NextResponse(resBody, { status: upstream.status });
+  callbacks: {
+    async redirect({ url, baseUrl }) {
+      const allowed = new Set([
+        "https://www.timmytracker.com",
+        "https://auth.timmytracker.com",
+      ]);
 
-  upstream.headers.forEach((v, k) => {
-    const key = k.toLowerCase();
-    if (key === "set-cookie") return;
-    res.headers.set(k, v);
-  });
+      try {
+        const u = new URL(url);
+        if (allowed.has(u.origin)) return url;
+      } catch {}
 
-  // set-cookie forwarding (basit)
-  const setCookie = upstream.headers.get("set-cookie");
-  if (setCookie) res.headers.append("set-cookie", setCookie);
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      return "https://www.timmytracker.com/me";
+    },
+  },
+};
 
-  return res;
-}
-
-export async function GET(req: NextRequest) { return proxy(req); }
-export async function POST(req: NextRequest) { return proxy(req); }
-export async function PUT(req: NextRequest) { return proxy(req); }
-export async function PATCH(req: NextRequest) { return proxy(req); }
-export async function DELETE(req: NextRequest) { return proxy(req); }
+const handler = NextAuth(authOptions);
+export { handler as GET, handler as POST };
