@@ -2,57 +2,41 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 
-const isProd = process.env.NODE_ENV === "production";
+const must = (key: string) => {
+  const v = process.env[key];
+  if (!v || !v.trim()) throw new Error(`MISSING_ENV:${key}`);
+  return v.trim();
+};
 
-/**
- * IMPORTANT:
- * - Cookie override KULLANMIYORUZ.
- * - Proxy / subdomain / callback karmaşasında en stabil yaklaşım budur.
- * - NEXTAUTH_URL mutlaka https://www.timmytracker.com olmalı (auth projesinde).
- */
 export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      clientId: must("GOOGLE_CLIENT_ID"),
+      clientSecret: must("GOOGLE_CLIENT_SECRET"),
     }),
   ],
 
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: must("NEXTAUTH_SECRET"),
   session: { strategy: "jwt" },
 
-  callbacks: {
-    /**
-     * NextAuth bazen dışarıya açık redirect alabilir.
-     * Biz sadece kendi origin'imiz içinde kalalım.
-     *
-     * baseUrl = NEXTAUTH_URL (auth projesindeki env)
-     * Bu da https://www.timmytracker.com olmalı.
-     */
-    async redirect({ url, baseUrl }) {
-      // /me gibi relative ise baseUrl içine al
-      if (url.startsWith("/")) return `${baseUrl}${url}`;
+  // ✅ Debug açık (prod'da da) — hata görünsün diye
+  debug: true,
 
-      // absolute ise sadece aynı origin'e izin ver
+  callbacks: {
+    async redirect({ url, baseUrl }) {
+      // baseUrl = NEXTAUTH_URL'den gelir (bu projede)
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
       try {
         const u = new URL(url);
         if (u.origin === baseUrl) return url;
-      } catch {
-        // ignore
-      }
-
-      // aksi halde ana sayfaya dön
+      } catch {}
       return baseUrl;
     },
 
     async jwt({ token, account, profile }) {
-      // email garanti olsun
       const p = profile as any;
       if (p?.email) token.email = p.email;
-
-      // provider info (opsiyonel)
       if (account?.provider) (token as any).provider = account.provider;
-
       return token;
     },
 
@@ -64,10 +48,4 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
   },
-
-  /**
-   * Prod’da debug kapalı kalsın.
-   * Sorun ararken true yapabilirsin.
-   */
-  // debug: !isProd,
 };
