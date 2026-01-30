@@ -1,9 +1,15 @@
+// lib/auth.ts
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 
 const isProd = process.env.NODE_ENV === "production";
-const COOKIE_DOMAIN = isProd ? ".timmytracker.com" : undefined;
 
+/**
+ * IMPORTANT:
+ * - Cookie override KULLANMIYORUZ.
+ * - Proxy / subdomain / callback karmaşasında en stabil yaklaşım budur.
+ * - NEXTAUTH_URL mutlaka https://www.timmytracker.com olmalı (auth projesinde).
+ */
 export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
@@ -15,40 +21,38 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
 
-    callbackUrl: {
-      name: "__Secure-next-auth.callback-url",
-      options: {
-        sameSite: "lax",
-        path: "/",
-        secure: isProd,
-        ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
-      },
-    },
-
-    csrfToken: {
-      name: "__Host-next-auth.csrf-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: isProd,
-      },
-    },
-  },
-
   callbacks: {
+    /**
+     * NextAuth bazen dışarıya açık redirect alabilir.
+     * Biz sadece kendi origin'imiz içinde kalalım.
+     *
+     * baseUrl = NEXTAUTH_URL (auth projesindeki env)
+     * Bu da https://www.timmytracker.com olmalı.
+     */
     async redirect({ url, baseUrl }) {
-      // Her zaman NEXTAUTH_URL (baseUrl) içinde kal
+      // /me gibi relative ise baseUrl içine al
       if (url.startsWith("/")) return `${baseUrl}${url}`;
+
+      // absolute ise sadece aynı origin'e izin ver
       try {
-        if (new URL(url).origin === baseUrl) return url;
-      } catch {}
+        const u = new URL(url);
+        if (u.origin === baseUrl) return url;
+      } catch {
+        // ignore
+      }
+
+      // aksi halde ana sayfaya dön
       return baseUrl;
     },
 
     async jwt({ token, account, profile }) {
-      if (profile && "email" in profile) token.email = (profile as any).email;
+      // email garanti olsun
+      const p = profile as any;
+      if (p?.email) token.email = p.email;
+
+      // provider info (opsiyonel)
       if (account?.provider) (token as any).provider = account.provider;
+
       return token;
     },
 
@@ -61,5 +65,9 @@ export const authOptions: NextAuthOptions = {
     },
   },
 
+  /**
+   * Prod’da debug kapalı kalsın.
+   * Sorun ararken true yapabilirsin.
+   */
   // debug: !isProd,
 };
