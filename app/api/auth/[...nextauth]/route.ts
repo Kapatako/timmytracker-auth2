@@ -1,24 +1,21 @@
-import NextAuth, { type NextAuthOptions } from "next-auth";
+import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export const authOptions: NextAuthOptions = {
+// ❗️Export ETME — route.ts içinde sadece local kalsın
+const authOptions = {
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID as string,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
   ],
-
-  // ✅ v4'te host doğruluğu için ENV şart:
-  // NEXTAUTH_URL=https://auth.timmytracker.com
 
   session: { strategy: "jwt" },
 
   cookies: {
-    // ✅ auth + www ortak cookie görsün
     sessionToken: {
       name: "__Secure-next-auth.session-token",
       options: {
@@ -50,7 +47,7 @@ export const authOptions: NextAuthOptions = {
   },
 
   callbacks: {
-    async redirect({ url, baseUrl }) {
+    async redirect({ url, baseUrl }: { url: string; baseUrl: string }) {
       const allowed = new Set([
         "https://www.timmytracker.com",
         "https://auth.timmytracker.com",
@@ -67,5 +64,5 @@ export const authOptions: NextAuthOptions = {
   },
 };
 
-const handler = NextAuth(authOptions);
+const handler = NextAuth(authOptions as any);
 export { handler as GET, handler as POST };
