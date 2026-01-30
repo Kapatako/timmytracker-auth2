@@ -1,51 +1,75 @@
-// lib/auth.ts
-import type { NextAuthOptions } from "next-auth";
-import GoogleProvider from "next-auth/providers/google";
+// lib/authClient.ts
+export const AUTH_ORIGIN = "https://auth.timmytracker.com";
+export const WWW_ORIGIN = "https://www.timmytracker.com";
 
-const must = (key: string) => {
-  const v = process.env[key];
-  if (!v || !v.trim()) throw new Error(`MISSING_ENV:${key}`);
-  return v.trim();
-};
+export type AuthSession =
+  | null
+  | {
+      user?: {
+        name?: string | null;
+        email?: string | null;
+        image?: string | null;
+      };
+      expires?: string;
+    };
 
-export const authOptions: NextAuthOptions = {
-  providers: [
-    GoogleProvider({
-      clientId: must("GOOGLE_CLIENT_ID"),
-      clientSecret: must("GOOGLE_CLIENT_SECRET"),
-    }),
-  ],
+export async function fetchAuthSession(): Promise<AuthSession> {
+  const r = await fetch(`${AUTH_ORIGIN}/api/auth/session`, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+    headers: { accept: "application/json" },
+  });
 
-  secret: must("NEXTAUTH_SECRET"),
-  session: { strategy: "jwt" },
+  // next-auth session endpoint bazen 200 + {} döner
+  const j = await r.json().catch(() => null);
+  if (!j || typeof j !== "object") return null;
 
-  // ✅ Debug açık (prod'da da) — hata görünsün diye
-  debug: true,
+  // next-auth: logged out => {}
+  if (!("user" in j)) return null;
+  return j as AuthSession;
+}
 
-  callbacks: {
-    async redirect({ url, baseUrl }) {
-      // baseUrl = NEXTAUTH_URL'den gelir (bu projede)
-      if (url.startsWith("/")) return `${baseUrl}${url}`;
-      try {
-        const u = new URL(url);
-        if (u.origin === baseUrl) return url;
-      } catch {}
-      return baseUrl;
-    },
+export function goSignIn(callbackPath = "/me") {
+  const callbackUrl = `${WWW_ORIGIN}${callbackPath}`;
+  const url = `${AUTH_ORIGIN}/api/auth/signin/google?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+  window.location.href = url;
+}
 
-    async jwt({ token, account, profile }) {
-      const p = profile as any;
-      if (p?.email) token.email = p.email;
-      if (account?.provider) (token as any).provider = account.provider;
-      return token;
-    },
+// next-auth signout aslında CSRF ister (POST).
+// Bu helper bunu doğru şekilde yapar.
+export async function signOutViaAuth(callbackPath = "/") {
+  const callbackUrl = `${WWW_ORIGIN}${callbackPath}`;
 
-    async session({ session, token }) {
-      if (session.user) {
-        if (token?.email) session.user.email = token.email as string;
-        (session.user as any).provider = (token as any).provider ?? "google";
-      }
-      return session;
-    },
-  },
-};
+  // 1) csrf al
+  const csrfRes = await fetch(`${AUTH_ORIGIN}/api/auth/csrf`, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+    headers: { accept: "application/json" },
+  });
+
+  const csrfJson = await csrfRes.json().catch(() => null);
+  const csrfToken = csrfJson?.csrfToken;
+  if (!csrfToken) {
+    // fallback: hiç uğraşmadan auth signout sayfasına gönder
+    window.location.href = `${AUTH_ORIGIN}/api/auth/signout?callbackUrl=${encodeURIComponent(callbackUrl)}`;
+    return;
+  }
+
+  // 2) POST signout
+  const form = new URLSearchParams();
+  form.set("csrfToken", csrfToken);
+  form.set("callbackUrl", callbackUrl);
+
+  await fetch(`${AUTH_ORIGIN}/api/auth/signout`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+    redirect: "follow",
+  });
+
+  // 3) www’ye dön
+  window.location.href = callbackUrl;
+}
