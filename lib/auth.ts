@@ -15,18 +15,6 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
 
-  cookies: {
-    sessionToken: {
-      name: "__Secure-next-auth.session-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: isProd,
-        ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
-      },
-    },
-
     callbackUrl: {
       name: "__Secure-next-auth.callback-url",
       options: {
