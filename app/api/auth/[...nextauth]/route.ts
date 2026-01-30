@@ -17,12 +17,9 @@ const authOptions: NextAuthOptions = {
     }),
   ],
 
-  // jwt strategy OK
   session: { strategy: "jwt" },
 
-  // ✅ Chrome/Opera fix: session cookie subdomainler arasında paylaşılmalı
-  // - Domain=.timmytracker.com -> www ve auth ikisi de görebilir
-  // - SameSite=None + Secure -> modern tarayıcılar cross-site/cross-subdomain'de cookie gönderir
+  // ✅ Chrome/Opera fix: cookie’yi .timmytracker.com domaininde paylaş
   cookies: {
     sessionToken: {
       name: "__Secure-next-auth.session-token",
@@ -35,7 +32,7 @@ const authOptions: NextAuthOptions = {
       },
     },
 
-    // csrf token host-only kalsın (domain vermiyoruz)
+    // csrf host-only kalsın
     csrfToken: {
       name: "__Host-next-auth.csrf-token",
       options: {
@@ -46,7 +43,7 @@ const authOptions: NextAuthOptions = {
       },
     },
 
-    // callback-url da host-only kalsın (domain vermiyoruz)
+    // callback-url host-only kalsın (çakışma azaltır)
     callbackUrl: {
       name: "__Secure-next-auth.callback-url",
       options: {
@@ -59,16 +56,13 @@ const authOptions: NextAuthOptions = {
   },
 
   callbacks: {
-    // ✅ token içine email/name/image al (session endpoint boş gelmesin)
+    // ✅ token içine email/name/image bas
     async jwt({ token, profile }) {
-      // Google profile geldiğinde token’a bas
       if (profile) {
-        // @ts-expect-error - profile tipi provider'a göre değişiyor
-        token.email = (profile as any).email ?? token.email;
-        // @ts-expect-error
-        token.name = (profile as any).name ?? token.name;
-        // @ts-expect-error
-        token.picture = (profile as any).picture ?? token.picture;
+        const p = profile as any;
+        token.email = p.email ?? token.email;
+        token.name = p.name ?? token.name;
+        token.picture = p.picture ?? token.picture;
       }
       return token;
     },
@@ -76,15 +70,14 @@ const authOptions: NextAuthOptions = {
     // ✅ session.user alanlarını token’dan doldur
     async session({ session, token }) {
       if (session.user) {
-        session.user.email = (token.email as string) || session.user.email || null;
-        session.user.name = (token.name as string) || session.user.name || null;
-        // next-auth user.image
-        (session.user as any).image = (token.picture as string) || (session.user as any).image || null;
+        session.user.email = (token.email as string) || null;
+        session.user.name = (token.name as string) || null;
+        (session.user as any).image = (token.picture as string) || null;
       }
       return session;
     },
 
-    // ✅ redirect güvenli whitelist
+    // ✅ redirect whitelist
     async redirect({ url, baseUrl }) {
       const allowed = new Set([WWW_ORIGIN, AUTH_ORIGIN]);
 
@@ -92,7 +85,7 @@ const authOptions: NextAuthOptions = {
         const u = new URL(url);
         if (allowed.has(u.origin)) return url;
       } catch {
-        // url relative ise aşağıda handle edeceğiz
+        // relative url olabilir
       }
 
       if (url.startsWith("/")) return `${baseUrl}${url}`;
